@@ -1,0 +1,51 @@
+// Hack CPU for Nand2Tetris
+// Roll 2501730337
+CHIP CPU {
+    IN  inM[16], instruction[16], reset;
+    OUT outM[16], writeM, addressM[15], pc[15];
+
+    PARTS:
+    // Decode instruction type.
+    Not(in=instruction[15], out=isAinstruction);
+    Not(in=isAinstruction, out=isCinstruction);
+
+    // A-register source: A-instructions use the instruction itself;
+    // C-instructions use the ALU output when destination A is selected.
+    Mux16(a=aluOut, b=instruction, sel=isAinstruction, out=aInput);
+    ARegister(in=aInput, load=aLoad, out=aOut, out[0..14]=addressM);
+
+    // C-instruction ALU control and D-register.
+    And(a=isCinstruction, b=instruction[4], out=dLoad);
+    DRegister(in=aluOut, load=dLoad, out=dOut);
+
+    // Mux for second ALU operand.
+    Mux16(a=aOut, b=inM, sel=instruction[12], out=aluY);
+
+    ALU(x=dOut, y=aluY,
+        zx=instruction[11], nx=instruction[10],
+        zy=instruction[9], ny=instruction[8],
+        f=instruction[7], no=instruction[6],
+        out=aluOut, out=outM,
+        zr=zr, ng=ng);
+
+    // A-register load is required for A-instructions and for C-instructions that use dest A.
+    And(a=isCinstruction, b=instruction[5], out=aDestLoad);
+    Or(a=isAinstruction, b=aDestLoad, out=aLoad);
+
+    // Write to RAM only for a C-instruction with dest M.
+    And(a=isCinstruction, b=instruction[3], out=writeM);
+
+    // Decode conditional jumps.
+    Not(in=ng, out=positiveOrZero);
+    Not(in=zr, out=notZr);
+    And(a=positiveOrZero, b=notZr, out=positive);
+
+    And(a=ng, b=instruction[2], out=jlt);
+    And(a=zr, b=instruction[1], out=jeq);
+    And(a=positive, b=instruction[0], out=jgt);
+    Or(a=jlt, b=jeq, out=jle);
+    Or(a=jle, b=jgt, out=jump);
+    And(a=isCinstruction, b=jump, out=pcLoad);
+
+    PC(in=aOut, load=pcLoad, inc=true, reset=reset, out[0..14]=pc);
+}
